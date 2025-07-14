@@ -14,15 +14,12 @@ export default async function handler(req, res) {
 
   try {
     console.log('=== AI API CALLED ===');
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     const { prompt, type, content } = req.body;
     
     // Check for API key
     const apiKey = process.env.GEMINI_API_KEY;
     console.log('API Key available:', !!apiKey);
-    console.log('API Key length:', apiKey ? apiKey.length : 0);
-    console.log('API Key ends with:', apiKey ? apiKey.slice(-6) : 'N/A');
     
     if (!apiKey) {
       return res.status(500).json({ 
@@ -36,26 +33,81 @@ export default async function handler(req, res) {
     // Different prompts for different AI tasks
     switch (type) {
       case 'extract':
-        systemPrompt = `Extract meeting details and return ONLY a JSON object:
+        systemPrompt = `You are a meeting data extraction expert. Analyze the provided content and extract meeting details.
+
+Look for:
+- Meeting title in filename or document header
+- Date in YYYY-MM-DD format from filename or content
+- Time in HH:MM format from timestamps or content
+- Location mentions (conference rooms, cities, virtual platforms)
+- Attendee names mentioned in conversation
+
+Return ONLY a JSON object with this exact structure:
 {
-  "title": "meeting title or null",
-  "date": "YYYY-MM-DD or null", 
-  "time": "HH:MM or null",
-  "location": "location or null",
-  "attendees": "attendees or null"
+  "title": "extracted meeting title or null",
+  "date": "YYYY-MM-DD format or null", 
+  "time": "HH:MM format or null",
+  "location": "meeting location or null",
+  "attendees": "comma-separated attendees or null"
 }
 
-Return ONLY valid JSON, no explanations.`;
-        maxTokens = 300;
+For the title, prefer meaningful topics from filename over generic phrases.
+For transcripts, extract the main business purpose discussed.
+
+Return ONLY valid JSON, no explanations or markdown.`;
+        maxTokens = 400;
         break;
         
       case 'summarize':
-        systemPrompt = `Create a professional meeting summary in British English with sections for Overview, Key Decisions, Action Items, Discussion Points, Next Steps, and Outstanding Issues. Format it clearly with headings.`;
-        maxTokens = 2000;
+        systemPrompt = `You are a professional meeting minutes assistant. Create a comprehensive summary in clear, readable format.
+
+Structure your response as follows:
+
+# Meeting Summary: [Title]
+
+## Meeting Overview
+Brief overview of the meeting's purpose and main topics discussed.
+
+## Key Decisions Made
+- List the main decisions made during the meeting
+- Include specific agreements or approvals
+
+## Action Items
+| Assignee | Task Description | Due Date | Priority | Status |
+|----------|------------------|----------|----------|--------|
+| [Name] | [Specific task] | [Date or TBD] | [High/Medium/Low] | [Not Started] |
+
+## Discussion Points & Strategic Insights
+**Key Topics Discussed:**
+- Main discussion themes and important points raised
+- Strategic insights and considerations
+
+**Technical/Operational Notes:**
+- Technical details discussed
+- Operational considerations
+
+## Financial & Resource Implications
+- Budget considerations mentioned
+- Resource allocation discussions
+- Cost implications
+
+## Next Steps & Follow-up Actions
+- Planned next steps
+- Follow-up meetings scheduled
+- Documentation to be prepared
+
+## Outstanding Issues
+- Unresolved items requiring attention
+- Pending decisions or approvals needed
+
+Use professional British English style. Focus on extracting real information from the content provided, not generic templates.`;
+        maxTokens = 2500;
         break;
         
       case 'query':
-        systemPrompt = `Answer the user's question about the meeting data provided. Be specific and reference actual content when possible.`;
+        systemPrompt = `You are a meeting analysis assistant. Answer the user's question about the provided meeting data. Be specific and reference actual meeting content when possible. If the information isn't available in the meetings provided, say so clearly.
+
+Format your response in a clear, professional manner with bullet points or structured text as appropriate.`;
         maxTokens = 800;
         break;
         
@@ -64,11 +116,10 @@ Return ONLY valid JSON, no explanations.`;
     }
 
     const fullPrompt = `${systemPrompt}\n\nContent to analyze:\n${content || prompt}`;
-    console.log('Generated prompt length:', fullPrompt.length);
+    console.log('Prompt type:', type, 'Content length:', (content || prompt).length);
 
-    // Use the correct Gemini 2.0 Flash model as shown in Google's documentation
+    // Use the correct Gemini 2.0 Flash model
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    console.log('Using Gemini URL (key masked):', geminiUrl.replace(apiKey, 'MASKED_KEY'));
 
     const requestBody = {
       contents: [{
@@ -81,15 +132,8 @@ Return ONLY valid JSON, no explanations.`;
         topK: 10
       }
     };
-    
-    console.log('Request body structure:', {
-      contentsLength: requestBody.contents.length,
-      textLength: requestBody.contents[0].parts[0].text.length,
-      generationConfig: requestBody.generationConfig
-    });
 
-    // Call Google Gemini API
-    console.log('🚀 Calling Gemini 2.0 Flash API...');
+    console.log('🚀 Calling Gemini API for type:', type);
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: {
@@ -99,45 +143,18 @@ Return ONLY valid JSON, no explanations.`;
     });
 
     console.log('Gemini response status:', response.status);
-    console.log('Gemini response ok:', response.ok);
-
-    const responseText = await response.text();
-    console.log('Gemini raw response length:', responseText.length);
-    console.log('Gemini raw response preview:', responseText.substring(0, 200) + '...');
 
     if (!response.ok) {
-      console.error('❌ Gemini API Error!');
-      console.error('Status:', response.status);
-      console.error('Response:', responseText);
-      
+      const errorText = await response.text();
+      console.error('❌ Gemini API Error:', errorText);
       return res.status(500).json({ 
         error: 'Gemini API failed',
-        details: `Status ${response.status}: ${responseText}`,
-        debug: {
-          status: response.status,
-          apiKeyLength: apiKey ? apiKey.length : 0,
-          apiKeyValid: apiKey ? apiKey.startsWith('AIza') : false,
-          model: 'gemini-2.0-flash'
-        }
+        details: `Status ${response.status}: ${errorText}`
       });
     }
 
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('❌ Failed to parse Gemini response as JSON');
-      return res.status(500).json({ 
-        error: 'Invalid JSON response from Gemini',
-        details: responseText.substring(0, 500)
-      });
-    }
-    
-    console.log('Parsed Gemini data structure:', {
-      hasCandidates: !!data.candidates,
-      candidatesLength: data.candidates ? data.candidates.length : 0,
-      firstCandidateHasContent: data.candidates && data.candidates[0] && !!data.candidates[0].content
-    });
+    const data = await response.json();
+    console.log('Got response from Gemini');
     
     if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
       console.error('❌ Invalid Gemini response structure');
@@ -148,40 +165,56 @@ Return ONLY valid JSON, no explanations.`;
     }
 
     const result = data.candidates[0].content.parts[0].text;
-    console.log('✅ Got result from Gemini (length):', result.length);
-    console.log('✅ Result preview:', result.substring(0, 100) + '...');
+    console.log('Result length:', result.length);
     
     // For extraction, try to parse JSON
     if (type === 'extract') {
       try {
-        const extractedData = JSON.parse(result);
+        // Clean up the result in case it has markdown formatting
+        let cleanResult = result.trim();
+        
+        // Remove markdown code block formatting if present
+        if (cleanResult.startsWith('```json')) {
+          cleanResult = cleanResult.replace(/```json\s*/, '').replace(/```\s*$/, '');
+        } else if (cleanResult.startsWith('```')) {
+          cleanResult = cleanResult.replace(/```\s*/, '').replace(/```\s*$/, '');
+        }
+        
+        console.log('Attempting to parse extraction result:', cleanResult);
+        const extractedData = JSON.parse(cleanResult);
         console.log('✅ Successfully parsed extraction JSON:', extractedData);
         return res.json({ result: extractedData });
       } catch (parseError) {
         console.error('❌ Failed to parse extraction result as JSON:', parseError);
         console.error('Raw result:', result);
-        // Return a safe default if JSON parsing fails
+        
+        // Try to extract manually if JSON parsing fails
+        const title = result.match(/"title":\s*"([^"]+)"/)?.[1] || null;
+        const date = result.match(/"date":\s*"([^"]+)"/)?.[1] || null;
+        const time = result.match(/"time":\s*"([^"]+)"/)?.[1] || null;
+        const location = result.match(/"location":\s*"([^"]+)"/)?.[1] || null;
+        const attendees = result.match(/"attendees":\s*"([^"]+)"/)?.[1] || null;
+        
         return res.json({ 
           result: {
-            title: null,
-            date: null,
-            time: null,
-            location: null,
-            attendees: null
+            title,
+            date,
+            time,
+            location,
+            attendees
           }
         });
       }
     }
 
-    console.log('✅ Returning successful result');
+    console.log('✅ Returning result for type:', type);
     return res.json({ result });
 
   } catch (error) {
     console.error('❌ Unexpected error in AI API:', error);
     return res.status(500).json({ 
       error: 'Unexpected error in AI processing',
-      details: error.message,
-      stack: error.stack?.substring(0, 500)
+      details: error.message
     });
   }
 }
