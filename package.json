@@ -1,11 +1,5 @@
 {
   "name": "meeting-notes-api",
   "version": "1.0.0",
-  "scripts": {
-    "build": "echo 'No build needed'",
-    "start": "echo 'API ready'"
-  },
-  "dependencies": {
-    "next": "^14.0.0"
-  }
+  "type": "module"
 }
