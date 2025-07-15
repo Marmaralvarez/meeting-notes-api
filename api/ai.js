@@ -33,13 +33,15 @@ export default async function handler(req, res) {
     // Different prompts for different AI tasks
     switch (type) {
       case 'extract':
-        systemPrompt = `You are a meeting data extraction expert. Analyze the provided content and extract meeting details.
+        systemPrompt = `You are a meeting data extraction expert. Analyse the provided content and extract meeting details.
 
 Look for:
 - Meeting title in filename or document header
 - Date in YYYY-MM-DD format from filename or content
 - Time in HH:MM format from timestamps or content
 - Location mentions (conference rooms, cities, virtual platforms)
+- Client name or organisation mentioned
+- Project name or identifier
 - Attendee names mentioned in conversation
 
 Return ONLY a JSON object with this exact structure:
@@ -48,6 +50,8 @@ Return ONLY a JSON object with this exact structure:
   "date": "YYYY-MM-DD format or null", 
   "time": "HH:MM format or null",
   "location": "meeting location or null",
+  "client": "client name or organisation or null",
+  "project": "project name or identifier or null",
   "attendees": "comma-separated attendees or null"
 }
 
@@ -59,7 +63,7 @@ Return ONLY valid JSON, no explanations or markdown.`;
         break;
         
       case 'summarize':
-        systemPrompt = `You are a professional meeting minutes assistant. Create a comprehensive summary in clear, readable format.
+        systemPrompt = `You are a professional meeting minutes assistant. Create a comprehensive summary in clear, readable format using British English spelling and terminology.
 
 Structure your response as follows:
 
@@ -100,7 +104,7 @@ Brief overview of the meeting's purpose and main topics discussed.
 - Unresolved items requiring attention
 - Pending decisions or approvals needed
 
-Use professional British English style. Focus on extracting real information from the content provided, not generic templates.`;
+Use professional British English throughout (organisation not organization, analyse not analyze, prioritise not prioritize, etc.). Focus on extracting real information from the content provided, not generic templates.`;
         maxTokens = 2500;
         break;
         
@@ -115,7 +119,7 @@ Format your response in a clear, professional manner with bullet points or struc
         return res.status(400).json({ error: 'Invalid AI task type' });
     }
 
-    const fullPrompt = `${systemPrompt}\n\nContent to analyze:\n${content || prompt}`;
+    const fullPrompt = `${systemPrompt}\n\nContent to analyse:\n${content || prompt}`;
     console.log('Prompt type:', type, 'Content length:', (content || prompt).length);
 
     // Use the correct Gemini 2.0 Flash model
@@ -193,6 +197,8 @@ Format your response in a clear, professional manner with bullet points or struc
         const date = result.match(/"date":\s*"([^"]+)"/)?.[1] || null;
         const time = result.match(/"time":\s*"([^"]+)"/)?.[1] || null;
         const location = result.match(/"location":\s*"([^"]+)"/)?.[1] || null;
+        const client = result.match(/"client":\s*"([^"]+)"/)?.[1] || null;
+        const project = result.match(/"project":\s*"([^"]+)"/)?.[1] || null;
         const attendees = result.match(/"attendees":\s*"([^"]+)"/)?.[1] || null;
         
         return res.json({ 
@@ -201,6 +207,8 @@ Format your response in a clear, professional manner with bullet points or struc
             date,
             time,
             location,
+            client,
+            project,
             attendees
           }
         });
