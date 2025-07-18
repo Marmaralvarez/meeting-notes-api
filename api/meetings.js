@@ -68,7 +68,7 @@ export default async function handler(req, res) {
         .from('meetings')
         .delete()
         .eq('id', id)
-        .eq('created_by', user.id); // prevents deleting others' meetings
+        .eq('created_by', user.email);
       if (error) throw error;
       return res.status(204).end();
     }
