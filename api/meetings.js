@@ -50,8 +50,8 @@ export default async function handler(req, res) {
 
     // POST: insert new meeting (for this user)
     if (req.method === 'POST') {
-      // Always attach created_by: user.id
-      const meeting = { ...req.body, created_by: user.id };
+      // Always attach created_by: user.email
+      const meeting = { ...req.body, created_by: user.email };
       const { data, error } = await supabase
         .from('meetings')
         .insert([meeting])
